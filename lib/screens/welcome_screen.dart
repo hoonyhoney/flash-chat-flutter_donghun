@@ -32,7 +32,6 @@ class _WelcomeScreenState extends State<WelcomeScreen> with SingleTickerProvider
     //애니메이션 시작
     controller.forward();
 
-
     controller.addListener(() {
       setState(() {
         print(controller.value);
