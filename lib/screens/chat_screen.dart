@@ -1,7 +1,11 @@
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flash_chat/constants.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
+final _firestore = FirebaseFirestore.instance;
+User loggedInUser;
 class ChatScreen extends StatefulWidget {
 
   static String id = 'chat_screen';
@@ -11,8 +15,11 @@ class ChatScreen extends StatefulWidget {
 }
 
 class _ChatScreenState extends State<ChatScreen> {
+  final messageTextController = TextEditingController();
+
   final _auth = FirebaseAuth.instance;
-  User loggedInUser;
+
+  String messageText;
 
   @override
   void initState() {
@@ -32,6 +39,22 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
+/*  void getMessages() async{
+    final messages = await _firestore.collection('messages').get();
+    for (var message in messages.docs) {
+      print(message.data());
+    }
+  }*/
+
+  void messageStream() async{
+    await for (var snapshot in _firestore.collection('messages').snapshots()){
+      //이중 for문 snapshot list에서 snapshot을 가져온 뒤, snapshot을 반복
+      for (var message in snapshot.docs) {
+        print(message.data());
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -42,7 +65,7 @@ class _ChatScreenState extends State<ChatScreen> {
               icon: Icon(Icons.close),
               onPressed: () {
                 //log out
-                _auth.signOut();
+               _auth.signOut();
                 Navigator.pop(context);
               }),
         ],
@@ -54,6 +77,7 @@ class _ChatScreenState extends State<ChatScreen> {
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
+            MessageStream(),
             Container(
               decoration: kMessageContainerDecoration,
               child: Row(
@@ -61,15 +85,21 @@ class _ChatScreenState extends State<ChatScreen> {
                 children: <Widget>[
                   Expanded(
                     child: TextField(
+                      controller: messageTextController, //textEditing Controller
                       onChanged: (value) {
-                        //Do something with the user input.
+                        messageText =value;
                       },
                       decoration: kMessageTextFieldDecoration,
                     ),
                   ),
                   FlatButton(
                     onPressed: () {
-                      //Implement send functionality.
+                      messageTextController.clear();
+                      //messageText + loggedInUser.email
+                      _firestore.collection('messages').add({
+                        'text':messageText,
+                        'sender': loggedInUser.email,
+                      });
                     },
                     child: Text(
                       'Send',
@@ -81,6 +111,94 @@ class _ChatScreenState extends State<ChatScreen> {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class MessageStream extends StatelessWidget {
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<QuerySnapshot>(
+      stream: _firestore.collection('messages').snapshots(),
+      //여기서의 snapshot은 async snap샷으로 위의 snapshot과 다름
+      builder: (context, snapshot){
+        if(!snapshot.hasData){
+          return Center(
+            child: CircularProgressIndicator(
+              backgroundColor: Colors.lightBlueAccent,
+            ),
+          );
+        }
+        //data는 querysnapshot, 즉 snapshot은 내 order, querysnapshot은 순서대로 나오는 스시,
+        // async snapshot > query snapshot > list of document snapshot
+        final messages = snapshot.data.docs.reversed;
+        List<MessageBubble> messageBubbles =[];
+        for (var message in messages){
+          final messageText = message.get('text');
+          final messageSender = message.get('sender');
+          final currentUser = loggedInUser.email;
+          final messageBubble =MessageBubble(sender: messageSender, text: messageText, isMe: currentUser == messageSender,);
+          messageBubbles.add(messageBubble);
+        }
+        return Expanded(
+          child: ListView(
+            reverse: true,
+            padding: EdgeInsets.symmetric(horizontal: 10.0, vertical: 20.0),
+            children: messageBubbles,
+          ),
+        );
+      },
+    );
+  }
+}
+
+
+
+class MessageBubble extends StatelessWidget {
+  //생성자를 만들었는데, 생성자는 마치 함수의 파라미터와같다.
+  MessageBubble({this.sender,this.text,this.isMe});
+  final String sender;
+  final String text;
+  final bool isMe;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.all(10.0),
+      child: Column(
+        crossAxisAlignment: isMe? CrossAxisAlignment.end : CrossAxisAlignment.start,
+        children: [
+          Text(sender,
+          style: TextStyle(
+            fontSize: 12.0,
+            color: Colors.black54,
+          ),),
+          Material(
+            borderRadius: isMe? BorderRadius.only(
+                topLeft: Radius.circular(30.0),
+                bottomLeft: Radius.circular(30.0),
+                bottomRight: Radius.circular(30.0)) :
+
+              BorderRadius.only(
+                topRight: Radius.circular(30.0),
+                bottomLeft: Radius.circular(30.0),
+                bottomRight: Radius.circular(30.0)),
+
+            elevation: 5.0, //음영
+            color: isMe ? Colors.lightBlueAccent : Colors.white,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20,vertical: 10.0),
+              child: Text('$text',
+                style: TextStyle(
+                  color: isMe? Colors.white : Colors.black54,
+                  fontSize: 15.0,
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
